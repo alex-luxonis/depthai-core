@@ -27,7 +27,7 @@ hunter_config(
         SPDLOG_FMT_EXTERNAL=OFF
 )
 
-# libarchive, luxonis fork
+# libarchive - Luxonis fork
 hunter_config(
     libarchive-luxonis
     VERSION "3.4.2-p2"
@@ -63,4 +63,15 @@ hunter_config(
         ENABLE_XATTR=OFF
         ENABLE_ZLIB=OFF
         ENABLE_ZSTD=OFF
+)
+
+# FP16 - Luxonis fork
+hunter_config(
+    FP16
+    VERSION "0.0.0-4cbaea6-p0"
+    URL "https://github.com/luxonis/FP16/archive/4cbaea6c74cb67748b6f5dabb3618e5421820b39.tar.gz"
+    SHA1 "08ec95b3b39232447d1cf5d975f8d007de2a041e"
+    CMAKE_ARGS
+        FP16_BUILD_BENCHMARKS=OFF
+        FP16_BUILD_TESTS=OFF
 )
