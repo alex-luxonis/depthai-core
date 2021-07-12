@@ -69,8 +69,8 @@ hunter_config(
 hunter_config(
     FP16
     VERSION "0.0.0-4cbaea6-p0"
-    URL "https://github.com/luxonis/FP16/archive/a82659cf33e460b0ad8b390f77f1db6595ed0234.tar.gz"
-    SHA1 "78c00f3a195380c89cbf54933511c5387f671c96"
+    URL "https://github.com/luxonis/FP16/archive/db0a8859fa460d27acea9b9955af75219b8fd6f8.tar.gz"
+    SHA1 "ff8021996fbfadf5665626975ab6f08243995dd1"
     CMAKE_ARGS
         FP16_BUILD_BENCHMARKS=OFF
         FP16_BUILD_TESTS=OFF
