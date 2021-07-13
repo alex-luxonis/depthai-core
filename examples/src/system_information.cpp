@@ -17,7 +17,7 @@ void printSystemInformation(dai::SystemInformation info) {
     printf("----------------------------------------\n");
 }
 
-int main() {
+int main(int argc, char *argv[]) {
     // Create pipeline
     dai::Pipeline pipeline;
 
@@ -34,7 +34,35 @@ int main() {
     sysLog->out.link(xout->input);
 
     // Connect to device and start pipeline
+#if 0
     dai::Device device(pipeline);
+#else
+    bool usb2 = false;
+    if (argc > 1 && std::string(argv[1]) == "2") {
+        printf("=== Forcing USB2 mode\n");
+        usb2 = true;
+    }
+
+    auto devs = dai::Device::getAllAvailableDevices();
+    int total = 0;
+    const char *states[] = {"any-state", "booted", "unbooted", "bootloader"};
+    for (const auto& d : devs) {
+        total++;
+        printf("%d : MXID %s - %s\n", total, d.getMxId().c_str(), states[d.state]);
+    }
+
+    int choice = 1;
+    if (total > 1) {
+        std::cout << "Enter the device index to connect to: ";
+        std::cin >> choice;
+    }
+    printf("Connecting to device %d, MXID %s in %s mode\n", choice,
+            devs[choice - 1].getMxId().c_str(),
+            usb2 ? "USB2" : "USB3");
+
+    // Connect to device and start pipeline
+    dai::Device device(pipeline, devs[choice - 1], usb2);
+#endif
 
     // Output queue will be used to get the system info
     auto qSysInfo = device.getOutputQueue("sysinfo", 4, false);
