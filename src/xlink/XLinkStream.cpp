@@ -6,6 +6,7 @@
 
 // project
 #include "depthai/xlink/XLinkConnection.hpp"
+#include <iostream>
 
 namespace dai {
 
@@ -32,6 +33,7 @@ XLinkStream::XLinkStream(const XLinkConnection& conn, const std::string& name, s
     }
 
     if(streamId == INVALID_STREAM_ID) throw std::runtime_error("Couldn't open stream");
+    std::cout << "XLINK opened " << name << " id " << streamId << std::endl;
 }
 
 // Move constructor
@@ -48,6 +50,7 @@ XLinkStream::~XLinkStream() {
     // If streamId != invalid (eg. wasn't moved to another XLinkStream)
     if(streamId != INVALID_STREAM_ID) {
         XLinkCloseStream(streamId);
+        std::cout << "XLINK closed id " << streamId << std::endl;
     }
 }
 

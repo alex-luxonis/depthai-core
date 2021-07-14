@@ -25,6 +25,8 @@ DataOutputQueue::DataOutputQueue(const std::shared_ptr<XLinkConnection>& conn, c
 
     // Creates a thread which reads from connection into the queue
     readingThread = std::thread([this, stream = std::move(stream)]() mutable {
+        auto tid = std::this_thread::get_id();
+        std::cout << "creating   OUT queue THREAD     ===== " << name << " " << tid << " stream-id " << stream.getStreamId() << std::endl;
         std::uint64_t numPacketsRead = 0;
         try {
             while(running) {
@@ -75,6 +77,7 @@ DataOutputQueue::DataOutputQueue(const std::shared_ptr<XLinkConnection>& conn, c
             exceptionMessage = fmt::format("Communication exception - possible device error/misconfiguration. Original message '{}'", ex.what());
         }
 
+        std::cout << "destroying OUT queue THREAD     ===== " << name << " " << tid << std::endl;
         queue.destruct();
         running = false;
     });
@@ -85,6 +88,7 @@ DataOutputQueue::~DataOutputQueue() {
     // Set reading thread to stop
     running = false;
 
+    printf("destroying OUT queue DESTRUCTOR ===== %s\n", name.c_str());
     // Destroy queue
     queue.destruct();
 
@@ -160,11 +164,14 @@ DataInputQueue::DataInputQueue(const std::shared_ptr<XLinkConnection>& conn, con
     XLinkStream stream(*conn, name, dai::XLINK_USB_BUFFER_MAX_SIZE);
 
     writingThread = std::thread([this, stream = std::move(stream)]() mutable {
+        auto tid = std::this_thread::get_id();
+        std::cout << "creating   IN  queue THREAD     ===== " << name << " " << tid << " stream-id " << stream.getStreamId() << std::endl;
         std::uint64_t numPacketsSent = 0;
         try {
             while(running) {
                 // get data from queue
                 std::shared_ptr<RawBuffer> data;
+                std::cout << "THREAD waitAndPop " << name << " " << tid << std::endl;
                 if(!queue.waitAndPop(data)) {
                     continue;
                 }
@@ -188,11 +195,13 @@ DataInputQueue::DataInputQueue(const std::shared_ptr<XLinkConnection>& conn, con
                 // Increment num packets sent
                 numPacketsSent++;
             }
-
+            std::cout << "THREAD loop end OK " << name << " " << tid << std::endl;
         } catch(const std::exception& ex) {
+            std::cout << "=== CAUGHT EXCEPT " << name << " -- " << ex.what() << std::endl;
             exceptionMessage = fmt::format("Communication exception - possible device error/misconfiguration. Original message '{}'", ex.what());
         }
 
+        std::cout << "destroying IN  queue THREAD     ===== " << name << " " << tid << std::endl;
         queue.destruct();
         running = false;
     });
@@ -204,6 +213,7 @@ DataInputQueue::~DataInputQueue() {
     running = false;
 
     // Destroy queue
+    printf("destroying IN  queue DESTRUCTOR ===== %s\n", name.c_str());
     queue.destruct();
 
     if(writingThread.joinable()) writingThread.join();
@@ -263,7 +273,10 @@ void DataInputQueue::send(const ADatatype& msg) {
 }
 
 bool DataInputQueue::send(const std::shared_ptr<RawBuffer>& rawMsg, std::chrono::milliseconds timeout) {
-    if(!running) throw std::runtime_error(exceptionMessage.c_str());
+    if(!running) {
+        printf("================ NOT running!!!\n");
+        throw std::runtime_error(exceptionMessage.c_str());
+    }
     if(!rawMsg) throw std::invalid_argument("Message passed is not valid (nullptr)");
 
     // Check if stream receiver has enough space for this message

@@ -65,6 +65,10 @@ int main() {
     videoEncoder->bitstream.link(videoMjpegOut->input);
     stillEncoder->bitstream.link(stillMjpegOut->input);
 
+  while(1) {
+    printf("============================================= wait 2 seconds\n");
+    cv::waitKey(2000);
+    printf("============================================= create/start device\n");
     // Connect to device and start pipeline
     dai::Device device(pipeline);
 
@@ -189,5 +193,6 @@ int main() {
             sendCamConfig = true;
         }
     }
+  }
     return 0;
 }

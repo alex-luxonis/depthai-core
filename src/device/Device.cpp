@@ -323,6 +323,7 @@ Device::Device(OpenVINO::Version version, bool usb2Mode) {
 void Device::close() {
     // Only allow to close once
     if(closed.exchange(true)) return;
+    printf("Device::close after once check\n");
 
     using namespace std::chrono;
     auto t1 = steady_clock::now();
@@ -359,6 +360,7 @@ void Device::close() {
     rpcStream = nullptr;
 
     spdlog::debug("Device closed, {}", duration_cast<milliseconds>(steady_clock::now() - t1).count());
+    printf("Device::close DONE!\n");
 }
 
 bool Device::isClosed() const {
