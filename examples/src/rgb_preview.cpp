@@ -24,6 +24,7 @@ int main() {
     // Linking
     camRgb->preview.link(xoutRgb->input);
 
+  while (1) {
     // Connect to device and start pipeline
     dai::Device device(pipeline);
 
@@ -40,6 +41,7 @@ int main() {
     // Output queue will be used to get the rgb frames from the output defined above
     auto qRgb = device.getOutputQueue("rgb", 4, false);
 
+    int count = 0;
     while(true) {
         auto inRgb = qRgb->get<dai::ImgFrame>();
 
@@ -50,6 +52,14 @@ int main() {
         if(key == 'q' || key == 'Q') {
             return 0;
         }
+
+        if (++count >= 30) {
+            device.close();
+            printf("Device closed, starting again...\n");
+            break;
+        }
+
     }
+  }
     return 0;
 }
