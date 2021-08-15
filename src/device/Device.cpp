@@ -580,6 +580,7 @@ void Device::init2(bool embeddedMvcmd, bool usb2Mode, const std::string& pathToM
 
                 // Write timestamp back
                 stream.write(&timestamp, sizeof(timestamp));
+                break;
             }
         } catch(const std::exception& ex) {
             // ignore
