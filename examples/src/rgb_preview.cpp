@@ -3,6 +3,16 @@
 // Inludes common necessary includes for development using depthai library
 #include "depthai/depthai.hpp"
 
+class MultiCamSystem {
+  public:
+    std::string deviceName;
+    std::shared_ptr<dai::DataOutputQueue> qFrame;
+
+    std::shared_ptr<dai::DataOutputQueue> getFrameQueue() {
+        return qFrame;
+    }
+};
+
 int main() {
     using namespace std;
     // Create pipeline
@@ -12,7 +22,7 @@ int main() {
     auto camRgb = pipeline.create<dai::node::ColorCamera>();
     auto xoutRgb = pipeline.create<dai::node::XLinkOut>();
 
-    xoutRgb->setStreamName("rgb");
+    xoutRgb->setStreamName("frame");
 
     // Properties
     camRgb->setPreviewSize(300, 300);
@@ -24,26 +34,35 @@ int main() {
     // Linking
     camRgb->preview.link(xoutRgb->input);
 
-    // Connect to device and start pipeline
-    dai::Device device(pipeline, dai::UsbSpeed::SUPER);
+    std::vector<dai::DeviceInfo> availableDevices = dai::Device::getAllAvailableDevices();
+    std::vector<MultiCamSystem> cams;
+    for (int i=0; i < availableDevices.size(); i++)
+    {
+        std::cout << "Connected to: "<< availableDevices[i].getMxId() << std::endl;
+        dai::Device device (pipeline, availableDevices[i]);
+        if (1) {
+            cout << "  -> Connected cameras: ";
+            for(const auto& c : device.getConnectedCameras()) {
+                cout << c << " ";
+            }
+            cout << endl;
+            cout << "  -> Usb speed: " << device.getUsbSpeed() << endl;
+        }
 
-    cout << "Connected cameras: ";
-    for(const auto& cam : device.getConnectedCameras()) {
-        cout << cam << " ";
+        MultiCamSystem cam;
+        cam.deviceName = availableDevices[i].getMxId();
+        cam.qFrame = device.getOutputQueue("frame", 1, false);
+        //cam.qClassifier = device.getOutputQueue("nn", 1, false);
+        cams.push_back(cam);
     }
-    cout << endl;
-
-    // Print USB speed
-    cout << "Usb speed: " << device.getUsbSpeed() << endl;
-
-    // Output queue will be used to get the rgb frames from the output defined above
-    auto qRgb = device.getOutputQueue("rgb", 4, false);
 
     while(true) {
-        auto inRgb = qRgb->get<dai::ImgFrame>();
+        for(auto& c : cams) {
+            auto inRgb = c.getFrameQueue()->get<dai::ImgFrame>();
 
-        // Retrieve 'bgr' (opencv format) frame
-        cv::imshow("rgb", inRgb->getCvFrame());
+            // Retrieve 'bgr' (opencv format) frame
+            cv::imshow("rgb-" + c.deviceName, inRgb->getCvFrame());
+        }
 
         int key = cv::waitKey(1);
         if(key == 'q' || key == 'Q') {
