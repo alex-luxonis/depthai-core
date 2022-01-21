@@ -14,50 +14,89 @@ int main() {
     // Create pipeline
     dai::Pipeline pipeline;
 
-    // Define sources and outputs
-    auto monoLeft = pipeline.create<dai::node::MonoCamera>();
-    auto monoRight = pipeline.create<dai::node::MonoCamera>();
-    auto depth = pipeline.create<dai::node::StereoDepth>();
-    auto xout = pipeline.create<dai::node::XLinkOut>();
 
-    xout->setStreamName("disparity");
+    auto monoLeft = pipeline.create<dai::node::ColorCamera>();
+    auto monoRight = pipeline.create<dai::node::ColorCamera>();
+    auto rgb = pipeline.create<dai::node::ColorCamera>();
+    auto depth = pipeline.create<dai::node::StereoDepth>();
+    auto xoutDisparity = pipeline.create<dai::node::XLinkOut>();
+    auto xoutDepth = pipeline.create<dai::node::XLinkOut>();
+    auto xoutRectifiedRight = pipeline.create<dai::node::XLinkOut>();
+    auto xoutRectifiedLeft = pipeline.create<dai::node::XLinkOut>();
+    auto controlDepthLeft = pipeline.create<dai::node::XLinkIn>();
+    auto controlDepthRight = pipeline.create<dai::node::XLinkIn>();
+    auto controlColor = pipeline.create<dai::node::XLinkIn>();
+    auto xoutRGB = pipeline.create<dai::node::XLinkOut>();
 
     // Properties
-    monoLeft->setResolution(dai::MonoCameraProperties::SensorResolution::THE_400_P);
+    monoLeft->setResolution(dai::ColorCameraProperties::SensorResolution::THE_1200_P);
     monoLeft->setBoardSocket(dai::CameraBoardSocket::LEFT);
-    monoRight->setResolution(dai::MonoCameraProperties::SensorResolution::THE_400_P);
-    monoRight->setBoardSocket(dai::CameraBoardSocket::RIGHT);
+    monoLeft->setIspScale(1280,1920);
 
-    // Create a node that will produce the depth map (using disparity output as it's easier to visualize depth this way)
-    depth->setDefaultProfilePreset(dai::node::StereoDepth::PresetMode::HIGH_DENSITY);
-    // Options: MEDIAN_OFF, KERNEL_3x3, KERNEL_5x5, KERNEL_7x7 (default)
-    depth->initialConfig.setMedianFilter(dai::MedianFilter::KERNEL_7x7);
+    monoRight->setResolution(dai::ColorCameraProperties::SensorResolution::THE_1200_P);
+    monoRight->setBoardSocket(dai::CameraBoardSocket::RIGHT);
+    monoRight->setIspScale(1280,1920);
+
+    rgb->setBoardSocket(dai::CameraBoardSocket::RGB);
+    rgb->setResolution(dai::ColorCameraProperties::SensorResolution::THE_1200_P);
+    rgb->setPreviewSize(1280, 720);
+
+    depth->initialConfig.setConfidenceThreshold(254);
+
+    depth->initialConfig.setMedianFilter(dai::MedianFilter::KERNEL_5x5);
+    depth->initialConfig.setBilateralFilterSigma(65000);
+    //depth->setRectifyEdgeFillColor(0);
     depth->setLeftRightCheck(lr_check);
     depth->setExtendedDisparity(extended_disparity);
     depth->setSubpixel(subpixel);
+    depth->setInputResolution(monoLeft->getIspSize());
+
+
+    xoutRGB->setStreamName("rgb");
+    xoutDisparity->setStreamName("disparity");
+    xoutRectifiedRight->setStreamName("rectifiedRight");
+    xoutRectifiedLeft->setStreamName("rectifiedLeft");
+    controlDepthLeft->setStreamName("controlLeft");
+    controlDepthRight->setStreamName("controlRight");
+    controlColor->setStreamName("controlColor");
+    xoutDepth->setStreamName("depth");
 
     // Linking
-    monoLeft->out.link(depth->left);
-    monoRight->out.link(depth->right);
-    depth->disparity.link(xout->input);
+
+    monoLeft->isp.link(depth->left);
+    monoRight->isp.link(depth->right);
+    depth->depth.link(xoutDepth->input);
+    depth->disparity.link(xoutDisparity->input);
+    depth->rectifiedRight.link(xoutRectifiedRight->input);
+    depth->rectifiedLeft.link(xoutRectifiedLeft->input);
+    controlDepthLeft->out.link(monoLeft->inputControl);
+    controlDepthRight->out.link(monoRight->inputControl);
+    controlColor->out.link(rgb->inputControl);
+    rgb->isp.link(xoutRGB->input);
 
     // Connect to device and start pipeline
     dai::Device device(pipeline);
+    dai::CalibrationHandler calibData = device.readCalibration();
 
-    // Output queue will be used to get the disparity frames from the outputs defined above
-    auto q = device.getOutputQueue("disparity", 4, false);
+
+    auto qd = device.getOutputQueue("disparity", 2, false);
+    auto qdepth = device.getOutputQueue("depth", 2, false);
+    auto qr = device.getOutputQueue("rectifiedRight", 2, false);
+    auto qrl = device.getOutputQueue("rectifiedLeft", 2, false);
+    auto qc = device.getOutputQueue("rgb", 2, false);
+    auto controlQueueLeft = device.getInputQueue("controlLeft");
+    auto controlQueueRight = device.getInputQueue("controlRight");
+    auto controlQueueColor = device.getInputQueue("controlColor");
+
 
     while(true) {
-        auto inDepth = q->get<dai::ImgFrame>();
+        auto inDepth = qdepth->get<dai::ImgFrame>();
         auto frame = inDepth->getFrame();
-        // Normalization for better visualization
-        frame.convertTo(frame, CV_8UC1, 255 / depth->initialConfig.getMaxDisparity());
 
-        cv::imshow("disparity", frame);
+        // Divide values by 10, converting to cm
+        frame.convertTo(frame, CV_8UC1, 0.1);
 
-        // Available color maps: https://docs.opencv.org/3.4/d3/d50/group__imgproc__colormap.html
-        cv::applyColorMap(frame, frame, cv::COLORMAP_JET);
-        cv::imshow("disparity_color", frame);
+        cv::imshow("depth", frame);
 
         int key = cv::waitKey(1);
         if(key == 'q' || key == 'Q') {
