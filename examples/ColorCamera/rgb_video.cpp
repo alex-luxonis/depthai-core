@@ -27,6 +27,18 @@ int main() {
     xoutVideo->input.setBlocking(false);
     xoutVideo->input.setQueueSize(1);
 
+    auto uac = pipeline.create<dai::node::UAC>();
+    uac->initialConfig.setMicGainTimes(7);
+    //uac->initialConfig.setMicGainDecibels(7);
+
+    auto audioIn = pipeline.create<dai::node::XLinkOut>();
+    audioIn->setStreamName("mic");
+    uac->out.link(audioIn->input);
+
+    auto audioInCfg = pipeline.create<dai::node::XLinkIn>();
+    audioInCfg->setStreamName("micCfg");
+    audioInCfg->out.link(uac->inputConfig);
+
     // Linking
     if (enableUVC) {
         auto uvc = pipeline.create<dai::node::UVC>();
@@ -46,11 +58,14 @@ int main() {
     int qsize = 1;
     bool blocking = false;
     auto video = device.getOutputQueue("video", qsize, blocking);
+    auto mic   = device.getOutputQueue("mic", 20, blocking);
+    auto micCfg = device.getInputQueue("micCfg");
 
     using namespace std::chrono;
     auto tprev = steady_clock::now();
     int count = 0;
 
+    float gain = 10;
     while(true) {
         auto videoIn = video->get<dai::ImgFrame>();
 
@@ -63,7 +78,22 @@ int main() {
                 printf("FPS: %.3f\n", fps);
                 count = 0;
                 tprev = tnow;
+
+                // Send every second a gain change command
+                dai::AudioInConfig cfg;
+                cfg.setMicGainTimes(gain);
+                //cfg.setMicGainDecibels(7);
+                micCfg->send(cfg);
+
+                gain += 10;
+                if (gain > 30) gain = 10;
             }
+        }
+
+        auto micPkt = mic->tryGet<dai::ImgFrame>();
+        if (micPkt) {
+            // real gain (in times) multiplied by 100 (saved as int), like ISO
+            printf("Audio, gain: %.2f times\n", micPkt->getSensitivity() / 100.);
         }
 
         // Get BGR frame from NV12 encoded video frame to show with opencv
