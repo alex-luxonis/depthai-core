@@ -1,24 +1,53 @@
 #include <chrono>
 #include <iostream>
+#include <unordered_map>
+#include <chrono>
 
 // Includes common necessary includes for development using depthai library
 #include "depthai/depthai.hpp"
 
-std::shared_ptr<dai::Pipeline> createPipeline() {
+bool previewEnabled = 0;
+
+std::shared_ptr<dai::Pipeline> createPipeline(std::string rgbCamName, bool enablePreview) {
+    printf("Creating pipeline for RGB camera: %s\n", rgbCamName.c_str());
     // Start defining a pipeline
     auto pipeline = std::make_shared<dai::Pipeline>();
     // Define a source - color camera
     auto camRgb = pipeline->create<dai::node::ColorCamera>();
-
-    camRgb->setPreviewSize(300, 300);
+    if (rgbCamName == "IMX296")
+        camRgb->setResolution(dai::ColorCameraProperties::SensorResolution::THE_1440X1080);
+    else
+        camRgb->setResolution(dai::ColorCameraProperties::SensorResolution::THE_1080_P);
     camRgb->setBoardSocket(dai::CameraBoardSocket::RGB);
-    camRgb->setResolution(dai::ColorCameraProperties::SensorResolution::THE_1080_P);
+    camRgb->setFps(15);
+    camRgb->setPreviewSize(1024, 768);
     camRgb->setInterleaved(false);
 
-    // Create output
-    auto xoutRgb = pipeline->create<dai::node::XLinkOut>();
-    xoutRgb->setStreamName("rgb");
-    camRgb->preview.link(xoutRgb->input);
+    auto manipRgb = pipeline->create<dai::node::ImageManip>();
+    dai::RotatedRect rgbRr = {{camRgb->getPreviewWidth() / 2.0f, camRgb->getPreviewHeight() / 2.0f},  // center
+                              {camRgb->getPreviewHeight() * 1.0f, camRgb->getPreviewWidth() * 1.0f},  // size
+                              90};                                                                   // angle
+    manipRgb->initialConfig.setCropRotatedRect(rgbRr, false);
+    manipRgb->initialConfig.setFrameType(dai::ImgFrame::Type::NV12);
+    manipRgb->setMaxOutputFrameSize(1024 * 768 * 3);
+
+    auto videoEncoder = pipeline->create<dai::node::VideoEncoder>();
+    videoEncoder->setDefaultProfilePreset(30, dai::VideoEncoderProperties::Profile::H264_MAIN);
+    videoEncoder->setQuality(100);
+
+    auto xoutEnc = pipeline->create<dai::node::XLinkOut>();
+    xoutEnc->setStreamName("encoded");
+
+    camRgb->preview.link(manipRgb->inputImage);
+    manipRgb->out.link(videoEncoder->input);
+    videoEncoder->bitstream.link(xoutEnc->input);
+
+    if (enablePreview) {
+        auto xoutRgb = pipeline->create<dai::node::XLinkOut>();
+        xoutRgb->setStreamName("preview");
+
+        manipRgb->out.link(xoutRgb->input);
+    }
 
     return pipeline;
 }
@@ -36,7 +65,7 @@ int main(int argc, char** argv) {
         devices.push_back(device);
         std::cout << "===Connected to " << deviceInfo.getMxId() << std::endl;
         auto mxId = device->getMxId();
-        auto cameras = device->getConnectedCameras();
+        auto cameras = device->getCameraSensorNames();
         auto usbSpeed = device->getUsbSpeed();
         auto eepromData = device->readCalibration2().getEepromData();
         std::cout << "   >>> MXID:" << mxId << std::endl;
@@ -48,20 +77,48 @@ int main(int argc, char** argv) {
         if(eepromData.productName != "") {
             std::cout << "   >>> Product name:" << eepromData.productName << std::endl;
         }
-        auto pipeline = createPipeline();
+        auto pipeline = createPipeline(cameras[dai::CameraBoardSocket::RGB], previewEnabled);
         device->startPipeline(*pipeline);
 
-        auto qRgb = device->getOutputQueue("rgb", 4, false);
-        std::string streamName = "rgb-" + eepromData.productName + mxId;
-        qRgbMap.insert({streamName, qRgb});
+        std::string streamName;
+        auto qEnc = device->getOutputQueue("encoded", 4, false);
+        streamName = "enc-" + eepromData.productName + mxId;
+        qRgbMap.insert({streamName, qEnc});
+        if (previewEnabled) {
+            auto qRgb = device->getOutputQueue("preview", 4, false);
+            streamName = "rgb-" + eepromData.productName + mxId;
+            qRgbMap.insert({streamName, qRgb});
+        }
     }
+    
+    // pairs of frame count and accumulated size
+    std::unordered_map<std::string, std::pair<uint64_t, uint64_t>> total;
+
+    auto tprev = std::chrono::steady_clock::now();
     while(true) {
         for(auto& element : qRgbMap) {
             auto qRgb = element.second;
             auto streamName = element.first;
             auto inRgb = qRgb->tryGet<dai::ImgFrame>();
             if(inRgb != nullptr) {
-                cv::imshow(streamName, inRgb->getCvFrame());
+                if (streamName.rfind("rgb", 0) == 0) {
+                    cv::imshow(streamName, inRgb->getCvFrame());
+                } else {
+                    //printf("frame from %s, size %lu\n", streamName.c_str(), inRgb->getData().size());
+                    total[streamName.c_str()] = std::make_pair(
+                        total[streamName.c_str()].first + 1,
+                        total[streamName.c_str()].second + inRgb->getData().size());
+                }
+            }
+        }
+
+        // Print frame stats every second
+        auto tnow = std::chrono::steady_clock::now();
+        using namespace std::chrono_literals;
+        if (tnow - tprev >= 1s) {
+            tprev = tnow;
+            for (const auto& kv : total) {
+                printf("%35s: %lu frames, size %lu\n", kv.first.c_str(), kv.second.first, kv.second.second);
             }
         }
 
