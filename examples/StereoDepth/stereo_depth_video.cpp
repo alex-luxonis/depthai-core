@@ -59,8 +59,30 @@ int main() {
         monoLeft->out.link(stereo->left);
         monoRight->out.link(stereo->right);
 
+#if 0 // original
         stereo->syncedLeft.link(xoutLeft->input);
         stereo->syncedRight.link(xoutRight->input);
+#else // with re-stamp
+        auto script = pipeline.create<dai::node::Script>();
+        script->setScript(R"(
+        while True:
+            frameL = node.io['inL'].get()
+            frameR = node.io['inR'].get()
+            diff_us = int((frameR.getTimestampDevice()
+                         - frameL.getTimestampDevice()).total_seconds() * 1000000)
+            # node.warn(f'diff: {diff_us} us')
+            if abs(diff_us) < 200:
+                frameR.setTimestamp(frameL.getTimestampDevice())
+            else:
+                node.error(f'diff too large ({diff_us} us), not restamping R')
+            node.io['outL'].send(frameL)
+            node.io['outR'].send(frameR)
+        )");
+        stereo->syncedLeft.link(script->inputs["inL"]);
+        stereo->syncedRight.link(script->inputs["inR"]);
+        script->outputs["outL"].link(xoutLeft->input);
+        script->outputs["outR"].link(xoutRight->input);
+#endif
         stereo->disparity.link(xoutDisp->input);
 
         if(outputRectified) {
@@ -96,6 +118,14 @@ int main() {
         cv::imshow("left", left->getFrame());
         auto right = rightQueue->get<dai::ImgFrame>();
         cv::imshow("right", right->getFrame());
+        using namespace std::chrono;
+        printf("L seq: %ld ts: %f (dev %f), R-L diff: %f (dev %f), R-L seq diff: %ld\n",
+                left->getSequenceNum(),
+                duration_cast<microseconds>(left->getTimestamp().time_since_epoch()).count()/1e6,
+                duration_cast<microseconds>(left->getTimestampDevice().time_since_epoch()).count()/1e6,
+                duration_cast<microseconds>(right->getTimestamp() - left->getTimestamp()).count()/1e6,
+                duration_cast<microseconds>(right->getTimestampDevice() - left->getTimestampDevice()).count()/1e6,
+                right->getSequenceNum() - left->getSequenceNum());
 
         if(withDepth) {
             auto disparity = dispQueue->get<dai::ImgFrame>();
